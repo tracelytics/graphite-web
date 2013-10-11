@@ -31,7 +31,7 @@ try:  # See if there is a system installation of pytz first
 except ImportError:  # Otherwise we fall back to Graphite's bundled version
   from graphite.thirdparty import pytz
 
-from graphite.util import getProfileByUsername, json
+from graphite.util import getProfileByUsername, json, unpickle
 from graphite.remote_storage import HTTPConnectionWithTimeout
 from graphite.logger import log
 from graphite.render.evaluator import evaluateTarget
@@ -267,7 +267,7 @@ def parseOptions(request):
   for opt in graphClass.customizable:
     if opt in queryParams:
       val = queryParams[opt]
-      if (val.isdigit() or (val.startswith('-') and val[1:].isdigit())) and opt not in ('fgcolor','bgcolor','fontColor'):
+      if (val.isdigit() or (val.startswith('-') and val[1:].isdigit())) and 'color' not in opt.lower():
         val = int(val)
       elif '.' in val and (val.replace('.','',1).isdigit() or (val.startswith('-') and val[1:].replace('.','',1).isdigit())):
         val = float(val)
@@ -359,7 +359,7 @@ def renderLocalView(request):
     optionsPickle = reqParams.read()
     reqParams.close()
     graphClass = GraphTypes[graphType]
-    options = pickle.loads(optionsPickle)
+    options = unpickle.loads(optionsPickle)
     image = doImageRender(graphClass, options)
     log.rendering("Delegated rendering request took %.6f seconds" % (time() -  start))
     return buildResponse(image)

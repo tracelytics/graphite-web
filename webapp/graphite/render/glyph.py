@@ -12,7 +12,12 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License."""
 
-import os, cairo, math, itertools, re
+import os, math, itertools, re
+try:
+    import cairo
+except ImportError:
+    import cairocffi as cairo
+
 import StringIO
 from datetime import datetime, timedelta
 from urllib import unquote_plus
@@ -408,7 +413,11 @@ class Graph:
   def loadTemplate(self,template):
     conf = SafeConfigParser()
     if conf.read(settings.GRAPHTEMPLATES_CONF):
-      defaults = dict( conf.items('default') )
+      defaults = defaultGraphOptions
+      # If a graphTemplates.conf exists, read in
+      # the values from it, but make sure that
+      # all of the default values properly exist
+      defaults.update(dict(conf.items('default')))
       if template in conf.sections():
         opts = dict( conf.items(template) )
       else:
@@ -873,7 +882,13 @@ class LineGraph(Graph):
           if consecutiveNones == 0:
             self.ctx.line_to(x, y)
             if 'stacked' in series.options: #Close off and fill area before unknown interval
-              self.fillAreaAndClip(x, y, startX)
+              if self.secondYAxis:
+                if 'secondYAxis' in series.options:
+                  self.fillAreaAndClip(x, y, startX, self.getYCoord(0, "right"))
+                else:
+                  self.fillAreaAndClip(x, y, startX, self.getYCoord(0, "left"))
+              else:
+                self.fillAreaAndClip(x, y, startX, self.getYCoord(0))
 
           x += series.xStep
           consecutiveNones += 1
@@ -931,9 +946,19 @@ class LineGraph(Graph):
 
       if 'stacked' in series.options:
         if self.lineMode == 'staircase':
-          self.fillAreaAndClip(x, y, startX)
+          xPos = x 
         else:
-          self.fillAreaAndClip(x-series.xStep, y, startX)
+          xPos = x-series.xStep
+        if self.secondYAxis:
+          if 'secondYAxis' in series.options:
+            areaYFrom = self.getYCoord(0, "right")
+          else:
+            areaYFrom = self.getYCoord(0, "left")
+        else:
+          areaYFrom = self.getYCoord(0)
+
+        self.fillAreaAndClip(xPos, y, startX, areaYFrom)
+
       else:
         self.ctx.stroke()
 
@@ -944,22 +969,33 @@ class LineGraph(Graph):
         else:
           self.ctx.set_dash([],0)
 
-  def fillAreaAndClip(self, x, y, startX=None):
+  def fillAreaAndClip(self, x, y, startX=None, areaYFrom=None):
     startX = (startX or self.area['xmin'])
+    areaYFrom = (areaYFrom or self.area['ymax'])
     pattern = self.ctx.copy_path()
 
-    self.ctx.line_to(x, self.area['ymax'])                  # bottom endX
-    self.ctx.line_to(startX, self.area['ymax'])             # bottom startX
+    # fill
+    self.ctx.line_to(x, areaYFrom)                  # bottom endX
+    self.ctx.line_to(startX, areaYFrom)             # bottom startX
     self.ctx.close_path()
     self.ctx.fill()
 
+    # clip above y axis
     self.ctx.append_path(pattern)
-    self.ctx.line_to(x, self.area['ymax'])                  # bottom endX
-    self.ctx.line_to(self.area['xmax'], self.area['ymax'])  # bottom right
+    self.ctx.line_to(x, areaYFrom)                  # yZero endX
+    self.ctx.line_to(self.area['xmax'], areaYFrom)  # yZero right
     self.ctx.line_to(self.area['xmax'], self.area['ymin'])  # top right
     self.ctx.line_to(self.area['xmin'], self.area['ymin'])  # top left
+    self.ctx.line_to(self.area['xmin'], areaYFrom)  # yZero left
+    self.ctx.line_to(startX, areaYFrom)             # yZero startX
+
+    # clip below y axis
+    self.ctx.line_to(x, areaYFrom)                  # yZero endX
+    self.ctx.line_to(self.area['xmax'], areaYFrom)  # yZero right
+    self.ctx.line_to(self.area['xmax'], self.area['ymax'])  # bottom right
     self.ctx.line_to(self.area['xmin'], self.area['ymax'])  # bottom left
-    self.ctx.line_to(startX, self.area['ymax'])             # bottom startX
+    self.ctx.line_to(self.area['xmin'], areaYFrom)  # yZero left
+    self.ctx.line_to(startX, areaYFrom)             # yZero startX
     self.ctx.close_path()
     self.ctx.clip()
 
