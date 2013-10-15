@@ -409,6 +409,54 @@ def keepLastValue(requestContext, seriesList, limit = INF):
       
   return seriesList
 
+def monotonicIncrease(requestContext, seriesList, limit = INF):
+  """
+  Takes one metric or a wildcard seriesList, and optionally a limit to the number of decreasing or 'None' values to fill in.
+  Similar to keepLastValue, but ensures the series list will be filled in with values that never decrease.
+  This function is used to ensure aggregated sums (via carbon-aggregator) are treated as a counter, as
+  Nones in some of the member metrics can descrease the sum, thereby producing gaps or large spikes when
+  using perSecond() or nonNegativeDerivative().
+
+  Continues the line with the last received value when 'None' or decreasing points appear in your data.
+
+  Example:
+
+  .. code-block:: none
+
+    &target=monotonicIncrease(Server01.connections.handled)
+    &target=monotonicIncrease(Server01.connections.handled, 10)
+
+  """
+  for series in seriesList:
+    series.name = "monotonicIncrease(%s)" % (series.name)
+    series.pathExpression = series.name
+    points_to_replace = 0
+    for i,value in enumerate(series):
+      series[i] = value
+
+      # No 'keeping' can be done on the first value because we have no idea
+      # what came before it.
+      if i == 0:
+         continue
+
+      if value is None or value < series[i - points_to_replace]:
+        points_to_replace += 1
+      else:
+         if 0 < points_to_replace <= limit:
+           # If a None or decreasing value is seen before the limit is hit,
+           # backfill all the missing datapoints with the last known value.
+           for index in xrange(i - points_to_replace, i):
+             series[index] = series[i - points_to_replace - 1]
+
+         points_to_replace = 0
+
+    # If the series ends with some decreasing or None values, try to backfill a bit to cover it.
+    if 0 < points_to_replace < limit:
+      for index in xrange(len(series) - points_to_replace, len(series)):
+        series[index] = series[len(series) - points_to_replace - 1]
+
+  return seriesList
+
 def asPercent(requestContext, seriesList, total=None):
   """
 
@@ -2784,6 +2832,7 @@ SeriesFunctions = {
   'cumulative' : cumulative,
   'consolidateBy' : consolidateBy,
   'keepLastValue' : keepLastValue,
+  'monotonicIncrease' : monotonicIncrease,
   'drawAsInfinite' : drawAsInfinite,
   'secondYAxis': secondYAxis,
   'lineWidth' : lineWidth,
