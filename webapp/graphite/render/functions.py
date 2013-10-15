@@ -439,7 +439,7 @@ def monotonicIncrease(requestContext, seriesList, limit = INF):
       if i == 0:
          continue
 
-      if value is None or value < series[i - points_to_replace]:
+      if value is None or value < series[i - points_to_replace - 1]:
         points_to_replace += 1
       else:
          if 0 < points_to_replace <= limit:
